@@ -1,6 +1,4 @@
-from googletrans import Translator
-
-translator = Translator()
+from deep_translator import GoogleTranslator
 
 def translate_recipes(recipes):
     if not recipes:
@@ -22,8 +20,9 @@ def translate_recipes(recipes):
     combined_text = " ||| ".join(cleaned_texts)
     
     try:
-        translated_res = translator.translate(combined_text, dest="ko")
-        translated_texts = [t.strip() for t in translated_res.text.split("|||")]
+        translator = GoogleTranslator(source='auto', target='ko')
+        translated_str = translator.translate(combined_text)
+        translated_texts = [t.strip() for t in translated_str.split("|||")]
         
         # If lengths match, we use them. If not, fallback to original texts.
         if len(translated_texts) != len(cleaned_texts):
@@ -32,7 +31,7 @@ def translate_recipes(recipes):
             translated_texts = []
             for t in cleaned_texts:
                 if t.strip():
-                    translated_texts.append(translator.translate(t, dest="ko").text)
+                    translated_texts.append(translator.translate(t))
                 else:
                     translated_texts.append(t)
     except Exception as e:

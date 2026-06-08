@@ -3,9 +3,7 @@ import requests
 import json
 import os
 from datetime import date, datetime
-from googletrans import Translator
-
-translator = Translator()
+from deep_translator import GoogleTranslator
 
 def clean_html(html_str):
     return "\n".join(line.strip() for line in html_str.strip().split("\n"))
@@ -33,8 +31,8 @@ def translate_recipe(r):
     combined_text = " ||| ".join(cleaned_texts)
     
     try:
-        translated_res = translator.translate(combined_text, dest="ko")
-        translated_texts = [t.strip() for t in translated_res.text.split("|||")]
+        translated_str = GoogleTranslator(source='auto', target='ko').translate(combined_text)
+        translated_texts = [t.strip() for t in translated_str.split("|||")]
         if len(translated_texts) == len(cleaned_texts):
             idx = 0
             r_copy = r.copy()

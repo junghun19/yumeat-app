@@ -1,7 +1,5 @@
 import requests
-from googletrans import Translator
-
-translator = Translator()
+from deep_translator import GoogleTranslator
 
 def translate_recipe(r):
     texts_to_translate = [
@@ -19,8 +17,8 @@ def translate_recipe(r):
     combined_text = " ||| ".join(cleaned_texts)
     
     try:
-        translated_res = translator.translate(combined_text, dest="ko")
-        translated_texts = [t.strip() for t in translated_res.text.split("|||")]
+        translated_str = GoogleTranslator(source='auto', target='ko').translate(combined_text)
+        translated_texts = [t.strip() for t in translated_str.split("|||")]
         if len(translated_texts) == len(cleaned_texts):
             idx = 0
             r_copy = r.copy()
