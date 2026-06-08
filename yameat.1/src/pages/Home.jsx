@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import RecipeCard from '../components/RecipeCard';
 import PostCard from '../components/PostCard';
 import { storage } from '../utils/storage';
+import { API_BASE_URL } from '../config';
 
-export default function Home({ onStartChat }) {
+export default function Home({ profile, onStartChat }) {
   const [posts, setPosts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('자유게시판');
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
@@ -15,12 +16,11 @@ export default function Home({ onStartChat }) {
 
   const categories = ['자유게시판', '추천 식단', '배달 더치페이', '냉털'];
 
-  const myProfile = storage.getUserProfile();
-  const myNickname = myProfile ? myProfile.nickname : '자취인';
+  const myNickname = profile ? profile.nickname : '자취인';
 
   useEffect(() => {
     // Fetch posts dynamically from FastAPI database
-    fetch('http://localhost:8000/api/posts')
+    fetch(`${API_BASE_URL}/api/posts`)
       .then(res => res.json())
       .then(data => {
         setPosts(data);
@@ -85,7 +85,7 @@ export default function Home({ onStartChat }) {
     localStorage.setItem('post_emotions', JSON.stringify(userEmotions));
     
     // Post to server DB
-    fetch(`http://localhost:8000/api/posts/${postId}/emotion`, {
+    fetch(`${API_BASE_URL}/api/posts/${postId}/emotion`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -118,7 +118,7 @@ export default function Home({ onStartChat }) {
       category: newCategory
     };
 
-    fetch('http://localhost:8000/api/posts', {
+    fetch(`${API_BASE_URL}/api/posts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -146,7 +146,7 @@ export default function Home({ onStartChat }) {
 
   const confirmDeletePost = () => {
     if (postIdToDelete) {
-      fetch(`http://localhost:8000/api/posts/${postIdToDelete}`, {
+      fetch(`${API_BASE_URL}/api/posts/${postIdToDelete}`, {
         method: 'DELETE'
       })
         .then(res => res.json())

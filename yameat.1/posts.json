@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1780889026063,
+    "title": "김치찌개",
+    "content": "레시피.1",
+    "author": "중앙대",
+    "category": "추천 식단",
+    "emotions": {
+      "like": 0,
+      "dislike": 0,
+      "sad": 0,
+      "happy": 0,
+      "angry": 0
+    }
+  },
+  {
+    "id": 1780889003216,
+    "title": "배고파ㅏ",
+    "content": "밥안머거서배고프다",
+    "author": "중앙대",
+    "category": "자유게시판",
+    "emotions": {
+      "like": 0,
+      "dislike": 0,
+      "sad": 0,
+      "happy": 0,
+      "angry": 0
+    }
+  }
+]

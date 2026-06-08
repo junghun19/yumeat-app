@@ -1,0 +1,31 @@
+{
+  "user1": {
+    "username": "user1",
+    "nickname": "SuperChef",
+    "password": "pass1"
+  },
+  "이정훈": {
+    "username": "이정훈",
+    "nickname": "이정훈",
+    "password": "1234"
+  },
+  "아이디": {
+    "username": "아이디",
+    "nickname": "아이디",
+    "password": "1234"
+  },
+  "비밀번호": {
+    "username": "비밀번호",
+    "nickname": "비밀번호",
+    "password": "1234",
+    "school": "중앙대학교",
+    "student_id": "20261648"
+  },
+  "중앙대": {
+    "username": "중앙대",
+    "nickname": "중앙대",
+    "password": "1234",
+    "school": "중앙대학교",
+    "student_id": "20261648"
+  }
+}

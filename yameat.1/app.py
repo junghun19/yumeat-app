@@ -241,40 +241,80 @@ st.set_page_config(page_title="얌잇 냉장고 백엔드", layout="wide")
 # File-based persistence for fridge items
 DATA_FILE = "fridge_items.json"
 
-def load_items():
+def get_item_user_id(item):
+    return item.get("user_id") or item.get("username", "default_user")
+
+def load_items(user_id: str):
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 items = json.load(f)
+                items = [item for item in items if get_item_user_id(item) == st.session_state['user_id']]
+                user_items = []
                 for item in items:
                     if "put_in" in item and isinstance(item["put_in"], str):
                         item["put_in"] = datetime.strptime(item["put_in"], "%Y-%m-%d").date()
                     if "expiry" in item and isinstance(item["expiry"], str):
                         item["expiry"] = datetime.strptime(item["expiry"], "%Y-%m-%d").date()
-                return items
+                    user_items.append(item)
+                return user_items
         except Exception:
             return []
     return []
 
-def save_items(items):
+def save_items(items, user_id: str):
     try:
-        serializable_items = []
+        all_items = []
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    all_items = json.load(f)
+            except Exception:
+                pass
+        
+        # Keep other users' items intact
+        all_items = [item for item in all_items if get_item_user_id(item) != st.session_state['user_id']]
+        
+        # Add current user's items
         for item in items:
             item_copy = item.copy()
+            item_copy["user_id"] = st.session_state['user_id']
+            item_copy["username"] = user_id
             if isinstance(item_copy.get("put_in"), (date, datetime)):
                 item_copy["put_in"] = item_copy["put_in"].strftime("%Y-%m-%d")
             if isinstance(item_copy.get("expiry"), (date, datetime)):
                 item_copy["expiry"] = item_copy["expiry"].strftime("%Y-%m-%d")
-            serializable_items.append(item_copy)
+            all_items.append(item_copy)
             
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(serializable_items, f, ensure_ascii=False, indent=2)
+            json.dump(all_items, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.error(f"저장 오류: {e}")
 
-# Session State for storing ingredients (initialized from JSON file)
-if "fridge_items" not in st.session_state:
-    st.session_state.fridge_items = load_items()
+# Resolve username/session from query parameters
+url_username = st.query_params.get("username")
+if url_username:
+    # Only update if user changed — don't reset on same-user re-renders
+    if st.session_state.get('user_id') != url_username:
+        st.session_state['user_id'] = url_username
+        st.session_state['logged_in'] = True
+        st.session_state['fridge_items'] = load_items(url_username)
+        st.session_state['prev_user_id'] = url_username
+        st.session_state['recommended_recipes'] = []
+    else:
+        st.session_state['logged_in'] = True
+else:
+    # No username param — initialize defaults without destroying existing state
+    if 'user_id' not in st.session_state:
+        st.session_state['user_id'] = 'default_user'
+        st.session_state['logged_in'] = False
+
+current_user = st.session_state.get('user_id', 'default_user')
+
+# Initialize fridge items only if not already loaded for this user
+if 'fridge_items' not in st.session_state:
+    st.session_state['fridge_items'] = load_items(current_user)
+    st.session_state['prev_user_id'] = current_user
 
 if "recommended_recipes" not in st.session_state:
     st.session_state.recommended_recipes = []
@@ -282,7 +322,7 @@ if "recommended_recipes" not in st.session_state:
 # Callback function to handle deletion without full iframe reloads
 def delete_item_callback(item_id):
     st.session_state.fridge_items = [item for item in st.session_state.fridge_items if item.get("id") != item_id]
-    save_items(st.session_state.fridge_items)
+    save_items(st.session_state.fridge_items, st.session_state.get('user_id', 'default_user'))
 
 # Force dark text and clean contrast regardless of system light/dark theme
 st.markdown(
@@ -568,10 +608,12 @@ with st.form("add_food_form", clear_on_submit=True):
                 "id": int(datetime.now().timestamp() * 1000),
                 "name": food_name.strip(),
                 "put_in": put_in_date,
-                "expiry": expiry_date
+                "expiry": expiry_date,
+                "user_id": st.session_state['user_id'],
+                "username": st.session_state.get('user_id', 'default_user')
             }
             st.session_state.fridge_items.append(new_item)
-            save_items(st.session_state.fridge_items)
+            save_items(st.session_state.fridge_items, st.session_state.get('user_id', 'default_user'))
             st.rerun()
         else:
             st.error("음식 이름을 입력해주세요.")

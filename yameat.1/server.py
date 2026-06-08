@@ -1,6 +1,7 @@
 import json
 import os
 import asyncio
+import uuid
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +49,29 @@ def save_chat_history(history):
     try:
         with open(CHAT_HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def has_message_id(messages, message_id):
+    if not message_id:
+        return False
+    return any(msg.get("id") == message_id for msg in messages)
+
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_users(users):
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
@@ -116,6 +140,102 @@ manager = ConnectionManager()
 
 # --- Profile API Endpoints ---
 
+@app.post("/api/login")
+async def login(data: dict):
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if not username:
+        return {"error": "아이디를 입력해 주세요."}
+    if not password:
+        return {"error": "비밀번호를 입력해 주세요."}
+
+    users = load_users()
+
+    # 아이디 존재 여부 검증
+    if username not in users:
+        return {"error": "잘못된 아이디입니다. 먼저 회원가입을 진행해 주세요."}
+
+    # 비밀번호 검증
+    stored_password = users[username].get("password", "")
+    if stored_password != password:
+        return {"error": "비밀번호가 틀렸습니다."}
+
+    return {"status": "success", "username": username, "nickname": users[username]["nickname"]}
+
+
+@app.post("/api/register")
+async def register(data: dict):
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    school = data.get("school", "").strip()
+    student_id = data.get("student_id", "").strip()
+
+    if not username:
+        return {"error": "아이디를 입력해 주세요."}
+    if not password:
+        return {"error": "비밀번호를 입력해 주세요."}
+    if not school:
+        return {"error": "재학 중인 학교를 입력해 주세요."}
+    if not student_id:
+        return {"error": "학번을 입력해 주세요."}
+
+    users = load_users()
+
+    if username in users:
+        return {"error": "이미 사용 중인 아이디입니다. 다른 아이디를 선택해 주세요."}
+
+    users[username] = {
+        "username": username,
+        "nickname": username,
+        "password": password,
+        "school": school,
+        "student_id": student_id
+    }
+    save_users(users)
+
+    return {"status": "success", "message": "회원가입이 성공적으로 완료되었습니다."}
+
+@app.post("/api/profile/nickname")
+async def update_nickname(data: dict):
+    username = data.get("username", "").strip()
+    new_nickname = data.get("new_nickname", "").strip()
+    
+    if not username or not new_nickname:
+        return {"error": "아이디와 새 닉네임을 모두 입력해 주세요."}
+        
+    users = load_users()
+    if username not in users:
+        return {"error": "사용자를 찾을 수 없습니다."}
+        
+    old_nickname = users[username]["nickname"]
+    users[username]["nickname"] = new_nickname
+    save_users(users)
+    
+    # Also update author in posts.json to keep points calculation aligned!
+    posts = load_posts()
+    updated = False
+    for post in posts:
+        if post.get("author") == old_nickname:
+            post["author"] = new_nickname
+            updated = True
+    if updated:
+        save_posts(posts)
+        
+    return {"status": "success", "username": username, "nickname": new_nickname}
+
+@app.get("/api/profile/user/{username}")
+async def get_profile_by_user(username: str):
+    users = load_users()
+    if username in users:
+        nickname = users[username]["nickname"]
+        points = get_user_points(nickname)
+        return {"username": username, "nickname": nickname, "hearts": points}
+    else:
+        # Fallback if not found in db
+        points = get_user_points(username)
+        return {"username": username, "nickname": username, "hearts": points}
+
 @app.get("/api/profile/{nickname}")
 async def get_profile(nickname: str):
     points = get_user_points(nickname)
@@ -124,7 +244,7 @@ async def get_profile(nickname: str):
 # --- Fridge API Endpoints ---
 
 @app.get("/api/fridge/expiring-dates")
-async def get_expiring_dates():
+async def get_expiring_dates(user_id: str = "default_user"):
     import json
     from datetime import date, datetime
     import os
@@ -138,6 +258,11 @@ async def get_expiring_dates():
             items = json.load(f)
     except Exception:
         return []
+
+    items = [
+        item for item in items
+        if (item.get("user_id") or item.get("username", "default_user")) == user_id
+    ]
         
     today = date.today()
     expiring_dates = []
@@ -237,6 +362,7 @@ async def websocket_endpoint(websocket: WebSocket, nickname: str = "익명"):
                 opponent = data.get("opponent")  # Recipient's real nickname
                 sender = nickname                # Sender's real nickname
                 text = data.get("text")
+                message_id = data.get("client_message_id") or str(uuid.uuid4())
                 
                 if opponent and text:
                     history = load_chat_history()
@@ -245,12 +371,16 @@ async def websocket_endpoint(websocket: WebSocket, nickname: str = "익명"):
                         history[sender] = {}
                     if opponent not in history[sender]:
                         history[sender][opponent] = []
+
+                    if has_message_id(history[sender][opponent], message_id):
+                        continue
                         
                     timestamp = datetime.now().strftime("%H:%M")
                     sender_points = get_user_points(sender)
                     badge = sender_points >= 80  # Star badge for level 5 (80+ points)
                     
                     sender_msg = {
+                        "id": message_id,
                         "author": "나",
                         "text": text.strip(),
                         "timestamp": timestamp,
@@ -273,6 +403,7 @@ async def websocket_endpoint(websocket: WebSocket, nickname: str = "익명"):
                             history[opponent][sender] = []
                             
                         recipient_msg = {
+                            "id": message_id,
                             "author": sender,
                             "text": text.strip(),
                             "timestamp": timestamp,
@@ -344,6 +475,7 @@ async def websocket_endpoint(websocket: WebSocket, nickname: str = "익명"):
                     if opponent in history and sender in history[opponent]:
                         timestamp = datetime.now().strftime("%H:%M")
                         system_msg = {
+                            "id": str(uuid.uuid4()),
                             "author": "시스템",
                             "text": "상대방이 대화방을 나갔습니다.",
                             "timestamp": timestamp,
@@ -373,4 +505,4 @@ async def websocket_endpoint(websocket: WebSocket, nickname: str = "익명"):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=8010, reload=True)

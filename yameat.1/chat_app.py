@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 import time
+import uuid
 from datetime import datetime
 
 # Page Configuration
@@ -26,9 +27,45 @@ def save_chat_history(history):
     except Exception as e:
         pass
 
+def message_key(msg):
+    return msg.get("id") or f"{msg.get('author')}|{msg.get('text')}|{msg.get('timestamp')}"
+
+def dedupe_messages(messages):
+    seen = set()
+    unique_messages = []
+    for msg in messages:
+        key = message_key(msg)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_messages.append(msg)
+    return unique_messages
+
+def normalize_chat_history(history):
+    normalized = {}
+    changed = False
+    for opp, messages in history.items():
+        unique_messages = dedupe_messages(messages)
+        normalized[opp] = unique_messages
+        if len(unique_messages) != len(messages):
+            changed = True
+    return normalized, changed
+
+def append_unique_message(history, opponent, message):
+    if opponent not in history:
+        history[opponent] = []
+    key = message_key(message)
+    if any(message_key(existing) == key for existing in history[opponent]):
+        return False
+    history[opponent].append(message)
+    return True
+
 # Session state initialization
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = load_chat_history()
+    loaded_history, history_changed = normalize_chat_history(load_chat_history())
+    st.session_state.chat_history = loaded_history
+    if history_changed:
+        save_chat_history(st.session_state.chat_history)
 
 if "screen" not in st.session_state:
     st.session_state.screen = "list"
@@ -41,6 +78,18 @@ if "needs_reply" not in st.session_state:
 
 if "last_user_message" not in st.session_state:
     st.session_state.last_user_message = ""
+
+if "last_input_key" not in st.session_state:
+    st.session_state.last_input_key = ""
+
+if "last_input_at" not in st.session_state:
+    st.session_state.last_input_at = 0.0
+
+if "pending_reply_id" not in st.session_state:
+    st.session_state.pending_reply_id = ""
+
+if "reply_in_progress" not in st.session_state:
+    st.session_state.reply_in_progress = False
 
 # Handle query parameter to open or create chat from community section
 # React passes ?create_chat=익명X&t=timestamp
@@ -263,7 +312,8 @@ else:
     st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #f1f3f5;'>", unsafe_allow_html=True)
     
     # Message History Container
-    messages = st.session_state.chat_history.get(active_opp, [])
+    messages = dedupe_messages(st.session_state.chat_history.get(active_opp, []))
+    st.session_state.chat_history[active_opp] = messages
     
     for msg in messages:
         role = "user" if msg["author"] == "나" else "assistant"
@@ -274,22 +324,40 @@ else:
     # Chat Input Field
     chat_msg = st.chat_input("쪽지 메시지를 입력하세요...", key="chat_msg_input")
     if chat_msg:
+        clean_msg = chat_msg.strip()
+        input_key = f"{active_opp}|{clean_msg}"
+        now = time.monotonic()
+        is_duplicate_event = (
+            st.session_state.last_input_key == input_key
+            and now - st.session_state.last_input_at < 2.0
+        )
+        
+        if is_duplicate_event:
+            st.session_state.last_input_at = now
+            st.stop()
+            
         # Save user message
+        message_id = str(uuid.uuid4())
         new_msg = {
+            "id": message_id,
             "author": "나",
-            "text": chat_msg.strip(),
+            "text": clean_msg,
             "timestamp": datetime.now().strftime("%H:%M")
         }
-        st.session_state.chat_history[active_opp].append(new_msg)
-        save_chat_history(st.session_state.chat_history)
+        if append_unique_message(st.session_state.chat_history, active_opp, new_msg):
+            save_chat_history(st.session_state.chat_history)
         
         # Setup bot auto-reply parameters
+        st.session_state.last_input_key = input_key
+        st.session_state.last_input_at = now
         st.session_state.needs_reply = True
-        st.session_state.last_user_message = chat_msg.strip()
+        st.session_state.last_user_message = clean_msg
+        st.session_state.pending_reply_id = f"reply-{message_id}"
         st.rerun()
 
 # Bot reply simulation process (independent of screen rendering, runs in background)
-if st.session_state.needs_reply and st.session_state.active_chat:
+if st.session_state.needs_reply and st.session_state.active_chat and not st.session_state.reply_in_progress:
+    st.session_state.reply_in_progress = True
     time.sleep(1.0)
     opp = st.session_state.active_chat
     user_txt = st.session_state.last_user_message
@@ -305,12 +373,15 @@ if st.session_state.needs_reply and st.session_state.active_chat:
         reply = f"쪽지 고마워요! 저도 오늘 저녁은 얌잇 앱 추천 식단으로 요리해 볼 생각이에요 👍"
         
     bot_msg = {
+        "id": st.session_state.pending_reply_id or str(uuid.uuid4()),
         "author": opp,
         "text": reply,
         "timestamp": datetime.now().strftime("%H:%M")
     }
     
-    st.session_state.chat_history[opp].append(bot_msg)
-    save_chat_history(st.session_state.chat_history)
+    if append_unique_message(st.session_state.chat_history, opp, bot_msg):
+        save_chat_history(st.session_state.chat_history)
     st.session_state.needs_reply = False
+    st.session_state.reply_in_progress = False
+    st.session_state.pending_reply_id = ""
     st.rerun()

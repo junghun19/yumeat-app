@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { STREAMLIT_BASE_URL } from '../config';
 
-export default function Fridge() {
+export default function Fridge({ profile }) {
   const [loaded, setLoaded] = useState(false);
+  const username = profile ? profile.username : 'default_user';
 
   return (
     <div className="page fridge-page" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -30,7 +32,7 @@ export default function Fridge() {
           </div>
         )}
         <iframe
-          src="http://localhost:8501"
+          src={`${STREAMLIT_BASE_URL}?username=${encodeURIComponent(username)}`}
           width="100%"
           height="100%"
           frameBorder="0"

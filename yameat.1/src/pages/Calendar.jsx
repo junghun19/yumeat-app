@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { getCalendarDays, getDayOfWeekName, formatDateKorean, getToday } from '../utils/dateUtils';
 import { storage } from '../utils/storage';
+import { API_BASE_URL } from '../config';
 
 const EMOTIONS = ['😀', '😢', '😡', '😍', '😴', '😵', '😎', '🤔'];
 
-export default function Calendar({ activeTab }) {
+export default function Calendar({ activeTab, profile }) {
   const today = getToday();
   const year = today.getFullYear();
   const month = today.getMonth();
@@ -14,6 +15,7 @@ export default function Calendar({ activeTab }) {
   const [selectedEmotion, setSelectedEmotion] = useState(null);
   const [diaries, setDiaries] = useState({});
   const [expiringDates, setExpiringDates] = useState([]);
+  const username = profile ? profile.username : 'default_user';
 
   const { daysInMonth, startingDayOfWeek } = getCalendarDays(year, month);
 
@@ -24,12 +26,12 @@ export default function Calendar({ activeTab }) {
 
   useEffect(() => {
     if (activeTab === 'calendar') {
-      fetch('http://localhost:8000/api/fridge/expiring-dates')
+      fetch(`${API_BASE_URL}/api/fridge/expiring-dates?user_id=${encodeURIComponent(username)}`)
         .then(res => res.json())
         .then(data => setExpiringDates(data))
         .catch(err => console.error('Error fetching expiring dates:', err));
     }
-  }, [activeTab]);
+  }, [activeTab, username]);
 
   const days = [];
   for (let i = 0; i < startingDayOfWeek; i++) {
